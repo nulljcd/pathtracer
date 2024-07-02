@@ -21,5 +21,5 @@ A simple pathtracer.
 - the dragon.obj is NOT mine, it is from stanford graphics (https://graphics.stanford.edu/)
 
 ## to-do
-TODO: better bvh building (sah)
-TODO: maybe skybox? (it would have to be 256 bit channel though)
+- TODO: better bvh building (sah)
+- TODO: maybe skybox? (it would have to be 256 bit channel though)
