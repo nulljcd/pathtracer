@@ -3,6 +3,7 @@ A simple pathtracer.
 
 ## specs
 - completely vanilla java (yea, it's slow)
+- multithreading
 - unbiased uni-directional path tracer
 - right-handed coord system
 - obj support
