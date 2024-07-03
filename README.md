@@ -14,8 +14,11 @@ A simple pathtracer.
 
 ## images
 ![render](https://github.com/nulljcd/pathtracer/assets/169845424/4c0935bc-5722-4794-870f-8d8ad8cfdb96)
+dragon from (https://casual-effects.com)
 ![render-1](https://github.com/nulljcd/pathtracer/assets/169845424/f9849ef9-4467-4a19-9540-78ce40d98d92)
 ![render](https://github.com/nulljcd/pathtracer/assets/169845424/a70d49c6-5daf-471d-ba67-f86ce61ac722)
+bmw from (https://casual-effects.com)
+
 ### more images to come
 
 ## important notes
