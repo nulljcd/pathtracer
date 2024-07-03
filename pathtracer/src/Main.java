@@ -6,7 +6,6 @@ class Main {
     Viewport viewport = new Viewport(viewportWidth, viewportHeight);
 
     Scene scene = new Scene();
-    // the scene is setup with the render from the readme.md in github
 
     scene.add(new AmbientLight(new Vector3(.2, .3, .4), 1));
 
@@ -17,9 +16,9 @@ class Main {
 
     Mesh mesh0 = new Mesh(
       new Vector3(0, 0, -6), // position
-      new Vector3(2,2,2), // scale
+      new Vector3(1, 1, 1), // scale
       new Vector3(0, -.5, 0), // rotation
-      OBJLoader.load("res/dragon.obj"), // triangles
+      OBJLoader.load("res/monkey.obj"), // triangles
       new Material(
         new Vector3(0, 0, 0), // color
         new Vector3(.8, .8, .8), // clear coat color
