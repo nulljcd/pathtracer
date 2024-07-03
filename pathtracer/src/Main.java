@@ -1,24 +1,5 @@
 class Main {
   public static void main(String[] args) {
-  // --- specs ---
-  // completely vanilla java (yea, it's slow)
-  // unbiased uni-directional path tracer
-  // right-handed coord system
-  // obj support
-  // bvh support
-  // simple physically based materials
-  // tone mapping
-
-  // --- important notes ---
-  // - the render is saved to the render.png file. note that it will be overwritten on the next render if it's name is not changed and is in the same folder
-  // - the dragon.obj is NOT mine, it is from stanford graphics (https://graphics.stanford.edu/)
-
-
-  // --- to-do ---
-  // TODO: better bvh building (sah)
-  // TODO: maybe skybox? (it would have to be 256 bit channel though)
-  // TODO: webgl version?
-
     final int viewportWidth = 1024;
     final int viewportHeight = 640;
 
