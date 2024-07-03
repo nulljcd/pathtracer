@@ -15,12 +15,13 @@ A simple pathtracer.
 ## images
 ![render](https://github.com/nulljcd/pathtracer/assets/169845424/4c0935bc-5722-4794-870f-8d8ad8cfdb96)
 ![render-1](https://github.com/nulljcd/pathtracer/assets/169845424/f9849ef9-4467-4a19-9540-78ce40d98d92)
+![render](https://github.com/nulljcd/pathtracer/assets/169845424/a70d49c6-5daf-471d-ba67-f86ce61ac722)
 ### more images to come
 
 ## important notes
 - the render is saved to the render.png file. note that it will be overwritten on the next render if it's name is not changed and is in the same folder
-- the dragon.obj is NOT mine, it is from stanford graphics (https://graphics.stanford.edu/)
 
 ## to-do
 - TODO: better bvh building (sah)
 - TODO: maybe skybox? (it would have to be 256 bit channel though)
+- TODO: antialiasing
