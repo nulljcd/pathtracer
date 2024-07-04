@@ -4,7 +4,7 @@ A simple pathtracer in vanilla java.
 ## specs
 - completely vanilla java (yea, it's slow)
 - multithreading
-- unbiased uni-directional path tracer
+- unbiased uni-directional path tracing
 - right-handed coord system
 - obj support
 - bvh support
