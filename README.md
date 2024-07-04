@@ -7,7 +7,7 @@ A simple pathtracer in vanilla java.
 - unbiased uni-directional path tracing
 - right-handed coord system
 - obj support
-- bvh support
+- bvh building
 - simple physically based materials
 - tone mapping
 - easy to customize
