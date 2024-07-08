@@ -38,9 +38,9 @@ class Main {
       OBJLoader.load("res/sphere.obj"),
       new Material(
         new Vector3(1, .5, .7),
-        new Vector3(0, 0, 0),
-        0, 
-        0,
+        new Vector3(1, 1, 1),
+        .2, 
+        .3,
         new Vector3(0, 0, 0),
         0));
 
@@ -57,10 +57,10 @@ class Main {
         0, 
         0,
         new Vector3(1, .6, .2),
-        8));
+        4));
 
     scene.add(mesh2);
 
-    Renderer.render(viewport, scene, 1000, 10,1, 64, 4);
+    Renderer.render(viewport, scene, 200, 10,1, 64, 4);
   }
 }
