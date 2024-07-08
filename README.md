@@ -34,5 +34,5 @@ ACES cinematic tonemapping
 
 ## to-do
 - TODO: better bvh building (sah)
-- TODO: maybe skybox? (it would have to be 256 bit channel though)
+- TODO: skybox
 - TODO: antialiasing
