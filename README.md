@@ -1,2 +1,2 @@
 # pathtracer
-A java pathtracer.
+A Java pathtracer.
