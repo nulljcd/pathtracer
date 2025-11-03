@@ -4,6 +4,7 @@ A little cpu side pathtracer in rust.
 ## features
 - unidirectional and unbiased
 - multithreading with rayon
+- math with glam
 - bvh acceleration
 - obj model support
 - simple materials
