@@ -3,8 +3,8 @@ A little cpu side pathtracer in rust.
 
 ## features
 - unidirectional and unbiased
-- multithreading
-- bvh acceleration structure
+- multithreading support
+- bvh acceleration
 - obj model support
 
 ## todo
