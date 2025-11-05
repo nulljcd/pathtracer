@@ -18,4 +18,4 @@ A little cpu side pathtracer in rust.
 
 ### resources used
 - hdri: https://polyhaven.com/a/qwantani_dusk_2_puresky
-- dragon model: https://casual-effects.com/data/
+- dragon model downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
