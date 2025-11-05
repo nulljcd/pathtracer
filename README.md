@@ -8,9 +8,9 @@ A little cpu side pathtracer in rust.
 - obj model support
 
 ## todo
-- importance sampling
-- textures?
 - full disney brdf support
+- importance sampling?
+- textures?
 
 ## renders
 <img width="1920" height="1080" alt="render" src="https://github.com/user-attachments/assets/a243e5e7-7de3-48ca-9a32-21ca675540b6" />
