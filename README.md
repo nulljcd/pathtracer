@@ -7,14 +7,8 @@ A little cpu side pathtracer in rust.
 - bvh acceleration
 - obj model support
 
-## todo
-- full disney brdf support
-- importance sampling?
-- textures?
-
 ## renders
-<img width="1920" height="1080" alt="render" src="https://github.com/user-attachments/assets/a243e5e7-7de3-48ca-9a32-21ca675540b6" />
-<img width="1920" height="1080" alt="render" src="https://github.com/user-attachments/assets/1a3fdfe4-0a16-4142-b0a3-0e9edf4812ab" />
+
 
 ### resources used
 - hdri: https://polyhaven.com/a/qwantani_dusk_2_puresky
