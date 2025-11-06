@@ -1,15 +1,15 @@
 # pathtracer
 A little cpu side pathtracer in rust.
 
-## features
-- unidirectional and unbiased
-- multithreading support
-- bvh acceleration
+## Features
+- Unidirectional and unbiased
+- Multithreading
+- BVH acceleration with sah
 - obj model support
 
-## renders
+## Renders
 
 
-### resources used
-- hdri: https://polyhaven.com/a/qwantani_dusk_2_puresky
-- dragon model downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
+### Resources Used
+- Hdri downloaded from [Poly Haven][https://polyhaven.com/a/qwantani_dusk_2_puresky]
+- Dragon model downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
