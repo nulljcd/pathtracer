@@ -4,9 +4,9 @@ A little cpu side pathtracer in rust.
 ## Features
 - Unidirectional and unbiased
 - Multithreading
-- BVH acceleration with sah
+- BVH acceleration
 - Obj mesh loading
-- Simple materials
+- Simple material
 
 ## Renders
 <img width="1920" height="1080" alt="0" src="https://github.com/user-attachments/assets/203ed42c-ab51-4a15-9995-e414236cbe36" />
