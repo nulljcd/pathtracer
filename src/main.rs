@@ -1,4 +1,4 @@
-use glam::{Quat, Vec3};
+use glam::{Mat3, Vec3};
 use image::{self, DynamicImage, ExtendedColorType, ImageError, ImageReader, save_buffer};
 use indicatif::ProgressBar;
 use nanorand::{Rng, WyRand};
@@ -24,7 +24,7 @@ impl Ray {
         }
     }
 
-    pub fn update_inverse_direction(&mut self) {
+    pub fn update_internal_data(&mut self) {
         self.inverse_direction = Vec3::ONE / self.direction;
     }
 }
@@ -84,6 +84,7 @@ impl Triangle {
         let uv: f32 = u.dot(v);
         let vv: f32 = v.length_squared();
         let normal: Vec3 = u.cross(v).normalize();
+        let denom: f32 = uu * vv - uv * uv;
 
         Triangle {
             vertex1,
@@ -96,10 +97,10 @@ impl Triangle {
             vv,
             normal,
             d1: -vertex1.dot(normal),
-            inv_d2: 1. / (uv * uv - uu * vv),
+            inv_d2: 1. / denom,
             min: vertex1.min(vertex2).min(vertex3),
             max: vertex1.max(vertex2).max(vertex3),
-            centroid: (vertex1 + vertex2 + vertex3) * (1. / 3.),
+            centroid: (vertex1 + vertex2 + vertex3) / 3.,
         }
     }
 
@@ -115,15 +116,11 @@ impl Triangle {
         let w: Vec3 = ray.origin + ray.direction * distance - self.vertex1;
         let wu: f32 = w.dot(self.u);
         let wv: f32 = w.dot(self.v);
-        let s: f32 = (self.uv * wv - self.vv * wu) * self.inv_d2;
-        if s < 0. || s > 1. {
+        let s: f32 = (self.vv * wu - self.uv * wv) * self.inv_d2;
+        let t: f32 = (self.uu * wv - self.uv * wu) * self.inv_d2;
+        if s < 0. || t < 0. || (s + t) > 1. {
             return None;
         }
-        let t: f32 = (self.uv * wu - self.uu * wv) * self.inv_d2;
-        if t < 0. || (s + t) > 1. {
-            return None;
-        }
-
         Some((distance, self.normal))
     }
 }
@@ -141,7 +138,7 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn new(triangles: &Vec<Triangle>, position: Vec3, scale: Vec3, rotation: Quat) -> Self {
+    pub fn new(triangles: &Vec<Triangle>, position: Vec3, scale: Vec3, rotation: Mat3) -> Self {
         let triangles: Vec<Triangle> = triangles
             .par_iter()
             .map(|triangle| {
@@ -291,15 +288,11 @@ impl Geometry {
     }
 
     pub fn intersect_ray(&self, ray: &Ray, mut nearest_hit_distance: f32) -> Option<(f32, Vec3)> {
-        if self.bounding_boxes[0]
-            .intersect_ray(ray, nearest_hit_distance)
-            .is_none()
-        {
-            return None;
-        }
+        self.bounding_boxes[0]
+            .intersect_ray(ray, nearest_hit_distance)?;
 
         let mut nearest_hit_data: Option<(f32, Vec3)> = None;
-        let mut stack: Vec<usize> = Vec::with_capacity(256);
+        let mut stack: Vec<usize> = Vec::with_capacity(128);
 
         stack.push(0);
 
@@ -359,7 +352,14 @@ impl Material {
         emissive_color: Vec3,
         emissive_strength: f32,
     ) -> Self {
-        Material { base_color, metallic_strength, clear_coat_strength, clear_coat_roughness, emissive_color, emissive_strength }
+        Material {
+            base_color,
+            metallic_strength,
+            clear_coat_strength,
+            clear_coat_roughness,
+            emissive_color,
+            emissive_strength,
+        }
     }
 }
 
@@ -379,11 +379,11 @@ pub struct Camera {
     pub aspect_ratio: f32,
     pub exposure: f32,
     pub position: Vec3,
-    pub rotation: Quat,
+    pub rotation: Mat3,
 }
 
 impl Camera {
-    pub fn new(fov: f32, aspect_ratio: f32, exposure: f32, position: Vec3, rotation: Quat) -> Self {
+    pub fn new(fov: f32, aspect_ratio: f32, exposure: f32, position: Vec3, rotation: Mat3) -> Self {
         Camera {
             fov,
             aspect_ratio,
@@ -470,9 +470,9 @@ impl Loader {
             if line.starts_with('v') {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
-                    let x = parts[1].parse::<f32>().ok()?;
-                    let y = parts[2].parse::<f32>().ok()?;
-                    let z = parts[3].parse::<f32>().ok()?;
+                    let x: f32 = parts[1].parse::<f32>().ok()?;
+                    let y: f32 = parts[2].parse::<f32>().ok()?;
+                    let z: f32 = parts[3].parse::<f32>().ok()?;
                     vertices.push(Vec3::new(x, y, z));
                 }
             } else if line.starts_with('f') {
@@ -508,8 +508,8 @@ impl Loader {
             .map(|p: &image::Rgb<f32>| Vec3::new(p[0], p[1], p[2]))
             .collect();
         Some(Environment::Hdri {
-            resolution: resolution,
-            buffer: buffer,
+            resolution,
+            buffer,
         })
     }
 }
@@ -536,7 +536,7 @@ impl Renderer {
         if linear <= 0.0031308 {
             12.92 * linear
         } else {
-            1.055 * linear.powf(1.0 / 2.4) - 0.055
+            1.055 * linear.powf(1. / 2.4) - 0.055
         }
     }
 
@@ -569,7 +569,7 @@ impl Renderer {
             ray_color = Vec3::ONE;
 
             for _ in 0..num_bounces {
-                ray.update_inverse_direction();
+                ray.update_internal_data();
 
                 if let Some((distance, hit_normal, material)) = scene.intersect_ray(&ray) {
                     ray.origin += ray.direction * (distance - 0.0000001);
@@ -620,12 +620,12 @@ impl Renderer {
             .par_chunks_mut(resolution_x)
             .enumerate()
             .for_each(|(y, row)| {
-                let mut rng: WyRand = WyRand::new();
+                let mut rng: WyRand = WyRand::new_seed(y as u64);
 
                 let normalized_screen_position_y: f32 =
                     -((y as f32 + 0.5) / resolution_y as f32 * 2. - 1.);
 
-                for x in 0..resolution_x {
+                for (x, color) in row.iter_mut().enumerate().take(resolution_x) {
                     let normalized_screen_position_x: f32 =
                         (x as f32 + 0.5) / resolution_x as f32 * 2. - 1.;
 
@@ -647,10 +647,12 @@ impl Renderer {
                     let final_color: Vec3 =
                         Renderer::to_srgb(mapped_color.clamp(Vec3::ZERO, Vec3::ONE));
 
-                    row[x] = final_color;
+                    *color = final_color;
                 }
 
-                bar.inc(1);
+                if y % 10 == 0 {
+                    bar.inc(10);
+                }
             });
 
         bar.finish();
@@ -665,19 +667,18 @@ pub struct Image {}
 impl Image {
     pub fn save_render_buffer_to_file(
         resolution: (usize, usize),
-        render_buffer: &Vec<Vec3>,
+        render_buffer: &[Vec3],
         path: &str,
     ) -> Result<(), ImageError> {
         let buffer: Vec<u8> = render_buffer
             .iter()
-            .map(|float_value| {
+            .flat_map(|float_value| {
                 [
                     (float_value.x * 255.) as u8,
                     (float_value.y * 255.) as u8,
                     (float_value.z * 255.) as u8,
                 ]
             })
-            .flatten()
             .collect();
 
         save_buffer(
@@ -697,7 +698,7 @@ fn main() {
         16. / 9.,
         -2.,
         Vec3::new(0., 0., 1.),
-        Quat::from_euler(glam::EulerRot::XYZ, 0., 0., 0.),
+        Mat3::from_euler(glam::EulerRot::XYZ, 0., 0., 0.),
     );
     let dragon_obj_triangles: Vec<Triangle> =
         Loader::load_obj_file("res/dragon.obj").expect("Failed to load obj file");
@@ -709,16 +710,16 @@ fn main() {
                 &dragon_obj_triangles,
                 Vec3::ZERO,
                 Vec3::ONE,
-                Quat::from_euler(glam::EulerRot::XYZ, 0., 2., 0.),
+                Mat3::from_euler(glam::EulerRot::XYZ, 0., 2., 0.),
             ),
-            Material::new(Vec3::splat(0.5), 0.8, 0., 0., Vec3::ZERO, 0.),
+            Material::new(Vec3::splat(0.5), 0.5, 0., 0., Vec3::ZERO, 0.),
         ),
         Object::new(
             Geometry::new(
                 &plane_obj_triangles,
                 Vec3::new(0., -0.275, 0.),
                 Vec3::splat(3.),
-                Quat::from_euler(glam::EulerRot::XYZ, 0., 0., 0.),
+                Mat3::from_euler(glam::EulerRot::XYZ, 0., 0., 0.),
             ),
             Material::new(Vec3::splat(1.), 0., 0., 0., Vec3::ZERO, 0.),
         ),
@@ -726,7 +727,7 @@ fn main() {
     let environment: Environment =
         Loader::load_hdri_environment("res/sky.hdr").expect("Failed to load hdri environment");
     let scene: Scene = Scene::new(objects, environment);
-    let render_buffer: Vec<Vec3> = Renderer::render(resolution, &camera, &scene, 1024, 6);
+    let render_buffer: Vec<Vec3> = Renderer::render(resolution, &camera, &scene, 256, 6);
     Image::save_render_buffer_to_file(resolution, &render_buffer, "render.png")
         .expect("Failed to save render buffer to file");
 }
