@@ -144,6 +144,8 @@ pub mod math {
 }
 
 pub mod bvh {
+    use std::time::Instant;
+
     use glam::Vec3A;
 
     use crate::math::{BoundingBox, Ray, Triangle};
@@ -160,6 +162,8 @@ pub mod bvh {
             let mut nodes_section_a: Vec<(usize, usize, bool)> = Vec::new();
             let mut final_triangles: Vec<Triangle> = Vec::with_capacity(input_triangles.len());
 
+            let start_time: Instant = Instant::now();
+
             let root_node_index: usize = Self::split(
                 input_triangles,
                 &mut nodes_section_a,
@@ -171,6 +175,8 @@ pub mod bvh {
             final_triangles
                 .iter_mut()
                 .for_each(|triangle| triangle.update_internal_data());
+
+            println!("bvh build: {:#?}", start_time.elapsed());
 
             (
                 Self {
@@ -348,7 +354,8 @@ pub mod bvh {
             let nodes_section_a: &[(usize, usize, bool)] = &self.bvh.nodes_section_a;
             let nodes_section_b: &[BoundingBox] = &self.bvh.nodes_section_b;
 
-            nodes_section_b[self.bvh.root_node_index].intersect(ray, nearest_hit_distance)?;
+            let _ =
+                nodes_section_b[self.bvh.root_node_index].intersect(ray, nearest_hit_distance)?;
 
             self.stack.clear();
             self.stack.push(self.bvh.root_node_index);
@@ -397,15 +404,19 @@ pub mod camera {
     pub struct Camera {
         pub fov: f32,
         pub aspect_ratio: f32,
+        pub focus_distance: f32,
+        pub lens_radius: f32,
         pub position: Vec3A,
         pub rotation: Mat3A,
     }
 
     impl Camera {
-        pub fn new(fov: f32, aspect_ratio: f32, position: Vec3A, rotation: Mat3A) -> Self {
+        pub fn new(fov: f32, aspect_ratio: f32, focus_distance: f32, lens_radius: f32, position: Vec3A, rotation: Mat3A) -> Self {
             Camera {
                 fov,
                 aspect_ratio,
+                focus_distance,
+                lens_radius,
                 position,
                 rotation,
             }
@@ -476,6 +487,7 @@ pub mod scene {
 
     pub enum Material {
         Debug,
+        Emissive { albedo: Vec3A, strength: f32 },
     }
 
     pub enum Environment {
@@ -552,11 +564,31 @@ pub mod renderer {
         scene::{Material, Scene},
     };
 
-    fn random_direction(rng: &mut WyRand) -> Vec3A {
+    fn sample_sphere(rng: &mut WyRand) -> Vec3A {
         let z: f32 = rng.generate::<f32>() * 2. - 1.;
         let t: f32 = rng.generate::<f32>() * std::f32::consts::TAU;
         let r: f32 = (1. - z * z).sqrt();
         Vec3A::new(r * t.cos(), r * t.sin(), z)
+    }
+
+    fn sample_disk(rng: &mut WyRand) -> Vec3A {
+        let u1: f32 = rng.generate::<f32>() * 2.0 - 1.0;
+        let u2: f32 = rng.generate::<f32>() * 2.0 - 1.0;
+
+        if u1 == 0.0 && u2 == 0.0 {
+            return Vec3A::ZERO;
+        }
+
+        let (r, theta) = if u1.abs() > u2.abs() {
+            (u1, std::f32::consts::FRAC_PI_4 * (u2 / u1))
+        } else {
+            (
+                u2,
+                std::f32::consts::FRAC_PI_2 - std::f32::consts::FRAC_PI_4 * (u1 / u2),
+            )
+        };
+
+        Vec3A::new(r * theta.cos(), r * theta.sin(), 0.0)
     }
 
     pub fn render(
@@ -571,14 +603,14 @@ pub mod renderer {
         let inverse_resolution_x_2: f32 = 1. / resolution_x as f32 * 2.;
         let inverse_resolution_y_2: f32 = 1. / resolution_y as f32 * 2.;
         let scale: f32 = (camera.fov * 0.5).tan();
-        let rotation_x: Vec3A = camera.rotation * Vec3A::X;
-        let rotation_y: Vec3A = camera.rotation * Vec3A::Y;
-        let rotation_z: Vec3A = camera.rotation * Vec3A::Z;
+        let camera_rotation_x: Vec3A = camera.rotation * Vec3A::X;
+        let camera_rotation_y: Vec3A = camera.rotation * Vec3A::Y;
+        let camera_rotation_z: Vec3A = camera.rotation * Vec3A::Z;
         let mut buffer: Vec<Vec3A> = vec![Vec3A::ZERO; resolution_x * resolution_y];
         let reciprocal_num_samples: f32 = 1. / num_samples as f32;
         let scene_triangles: &[Triangle] = &scene.triangles;
         let scene_materials: &[Material] = &scene.materials;
-        
+
         let bar: ProgressBar = ProgressBar::new(resolution_y as u64);
         let start_time: Instant = Instant::now();
 
@@ -598,16 +630,28 @@ pub mod renderer {
 
                     let base_ray: Ray = Ray::new(
                         camera.position,
-                        (rotation_x * normalized_screen_position_x * camera.aspect_ratio * scale
-                            + rotation_y * normalized_screen_position_y * scale
-                            + rotation_z * -1.)
+                        (camera_rotation_x
+                            * normalized_screen_position_x
+                            * camera.aspect_ratio
+                            * scale
+                            + camera_rotation_y * normalized_screen_position_y * scale
+                            + camera_rotation_z * -1.)
                             .normalize(),
                     );
+
+                    let focus_point: Vec3A = base_ray.origin + base_ray.direction * camera.focus_distance;
 
                     let mut total_incoming_light: Vec3A = Vec3A::ZERO;
 
                     for _ in 0..num_samples {
                         let mut ray: Ray = base_ray;
+
+                        let jitter: Vec3A = sample_disk(&mut rng);
+                        let lens_offset: Vec3A = camera_rotation_x * jitter.x * camera.lens_radius
+                            + camera_rotation_y * jitter.y * camera.lens_radius;
+
+                        ray.origin = camera.position + lens_offset;
+                        ray.direction = (focus_point - ray.origin).normalize();
 
                         let mut incoming_light: Vec3A = Vec3A::ZERO;
                         let mut ray_color: Vec3A = Vec3A::ONE;
@@ -623,18 +667,19 @@ pub mod renderer {
                                 match &scene_materials[triangle.material_index] {
                                     Material::Debug => {
                                         ray.origin += ray.direction * (hit_distance - 0.0000001);
-                                        ray.direction = (triangle.normal
-                                            + random_direction(&mut rng))
-                                        .normalize();
+                                        ray.direction =
+                                            (triangle.normal + sample_sphere(&mut rng)).normalize();
 
-                                        // ray_color *= triangle.normal * 0.5 + 0.5;
-                                        ray_color *= 0.8;
+                                        ray_color *= 0.75;
+                                    }
+                                    Material::Emissive { albedo, strength } => {
+                                        incoming_light += ray_color * albedo * strength;
+                                        break;
                                     }
                                 }
                             } else {
-                                incoming_light += Vec3A::splat(1.)
-                                    * ray_color
-                                    * scene.environment.sample(&ray.direction);
+                                incoming_light +=
+                                    ray_color * scene.environment.sample(&ray.direction);
                                 break;
                             }
                         }
@@ -645,28 +690,28 @@ pub mod renderer {
                     row[x] = total_incoming_light * reciprocal_num_samples;
                 }
 
-                if y % 10 == 0 {
+                if y % 10 == 9 {
                     bar.inc(10);
                 }
             });
 
         bar.finish();
-        println!("{:#?}", start_time.elapsed());
+        println!("render: {:#?}", start_time.elapsed());
 
         buffer
     }
 }
 
 pub mod color_management {
+    use std::time::Instant;
+
     use glam::Vec3A;
     use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-    pub fn apply_exposure(buffer: &mut Vec<Vec3A>, exposure_value: f32) {
-        let multiplier_strength: f32 = 2f32.powf(exposure_value);
+    pub fn apply_exposure(color: &mut Vec3A, exposure_value: f32) {
+        let multiplier_strength: f32 = exposure_value.exp2();
 
-        buffer.par_iter_mut().for_each(|color| {
-            *color *= multiplier_strength;
-        });
+        *color *= multiplier_strength;
     }
 
     pub enum ViewTransform {
@@ -684,12 +729,10 @@ pub mod color_management {
             (color * (A * color + B)) / (color * (C * color + D) + E)
         }
 
-        pub fn apply(&self, buffer: &mut Vec<Vec3A>) {
+        pub fn apply(&self, color: &mut Vec3A) {
             match self {
                 ViewTransform::None => {}
-                ViewTransform::Aces => buffer.par_iter_mut().for_each(|color| {
-                    *color = Self::aces(color);
-                }),
+                ViewTransform::Aces => *color = Self::aces(color),
             }
         }
     }
@@ -716,12 +759,10 @@ pub mod color_management {
             )
         }
 
-        pub fn apply(&self, buffer: &mut Vec<Vec3A>) {
+        pub fn apply(&self, color: &mut Vec3A) {
             match self {
                 Colorspace::None => {}
-                Colorspace::Srgb => buffer.par_iter_mut().for_each(|color| {
-                    *color = Self::srgb(color);
-                }),
+                Colorspace::Srgb => *color = Self::srgb(color),
             }
         }
     }
@@ -734,9 +775,13 @@ pub mod color_management {
 
     impl ColorManager {
         pub fn apply(&self, buffer: &mut Vec<Vec3A>) {
-            apply_exposure(buffer, self.exposure_value);
-            self.view_transform.apply(buffer);
-            self.colorspace.apply(buffer);
+            let start_time: Instant = Instant::now();
+            buffer.par_iter_mut().for_each(|color| {
+                apply_exposure(color, self.exposure_value);
+                self.view_transform.apply(color);
+                self.colorspace.apply(color);
+            });
+            println!("color management: {:#?}", start_time.elapsed());
         }
     }
 }
@@ -748,7 +793,7 @@ pub mod image {
 
     #[inline]
     fn to_u8(v: f32) -> u8 {
-        (v.clamp(0., 1.) * 255.) as u8
+        (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
     }
 
     pub fn save_buffer_to_file(
@@ -756,14 +801,18 @@ pub mod image {
         buffer: &[Vec3A],
         path: &str,
     ) -> Result<(), ImageError> {
-        let buffer: Vec<u8> = buffer
+        let byte_buffer: Vec<u8> = buffer
             .par_iter()
-            .flat_map(|color| [to_u8(color.x), to_u8(color.y), to_u8(color.z)])
+            .map(|c| [to_u8(c.x), to_u8(c.y), to_u8(c.z)])
+            .collect::<Vec<[u8; 3]>>()
+            .iter()
+            .flatten()
+            .copied()
             .collect();
 
         save_buffer(
             path,
-            &buffer,
+            &byte_buffer,
             resolution.0 as u32,
             resolution.1 as u32,
             ExtendedColorType::Rgb8,
@@ -777,6 +826,8 @@ fn main() {
     let camera: camera::Camera = camera::Camera::new(
         1.,
         16. / 9.,
+        1.,
+        0.04,
         Vec3A::new(0., 0., 1.),
         Mat3A::from_euler(EulerRot::XYZ, 0., 0., 0.),
     );
@@ -822,7 +873,7 @@ fn main() {
         colorspace: color_management::Colorspace::Srgb,
     };
 
-    let mut buffer: Vec<Vec3A> = renderer::render(resolution, &camera, &scene, &bvh, 2048, 6);
+    let mut buffer: Vec<Vec3A> = renderer::render(resolution, &camera, &scene, &bvh, 16, 6);
 
     color_manager.apply(&mut buffer);
 
