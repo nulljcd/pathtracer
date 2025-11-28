@@ -348,8 +348,13 @@ pub mod bvh {
             }
         }
 
-        pub fn intersect(&mut self, ray: &Ray, triangles: &[Triangle]) -> Option<(f32, usize)> {
-            let mut nearest_hit_distance: f32 = f32::INFINITY;
+        pub fn intersect(
+            &mut self,
+            ray: &Ray,
+            triangles: &[Triangle],
+            nearest_hit_distance: f32,
+        ) -> Option<(f32, usize)> {
+            let mut nearest_hit_distance: f32 = nearest_hit_distance;
             let mut nearest_hit_data: Option<(f32, usize)> = None;
             let nodes_section_a: &[(usize, usize, bool)] = &self.bvh.nodes_section_a;
             let nodes_section_b: &[BoundingBox] = &self.bvh.nodes_section_b;
@@ -403,20 +408,30 @@ pub mod camera {
 
     pub struct Camera {
         pub fov: f32,
-        pub aspect_ratio: f32,
+        pub clip_start: f32,
+        pub clip_end: f32,
         pub focus_distance: f32,
-        pub lens_radius: f32,
+        pub blur: f32,
         pub position: Vec3A,
         pub rotation: Mat3A,
     }
 
     impl Camera {
-        pub fn new(fov: f32, aspect_ratio: f32, focus_distance: f32, lens_radius: f32, position: Vec3A, rotation: Mat3A) -> Self {
+        pub fn new(
+            fov: f32,
+            clip_start: f32,
+            clip_end: f32,
+            focus_distance: f32,
+            blur: f32,
+            position: Vec3A,
+            rotation: Mat3A,
+        ) -> Self {
             Camera {
                 fov,
-                aspect_ratio,
+                clip_start,
+                clip_end,
                 focus_distance,
-                lens_radius,
+                blur,
                 position,
                 rotation,
             }
@@ -549,7 +564,7 @@ pub mod scene {
 pub mod renderer {
     use std::time::Instant;
 
-    use glam::Vec3A;
+    use glam::{Vec2, Vec3A};
     use indicatif::ProgressBar;
     use nanorand::{Rng, WyRand};
     use rayon::{
@@ -571,24 +586,10 @@ pub mod renderer {
         Vec3A::new(r * t.cos(), r * t.sin(), z)
     }
 
-    fn sample_disk(rng: &mut WyRand) -> Vec3A {
-        let u1: f32 = rng.generate::<f32>() * 2.0 - 1.0;
-        let u2: f32 = rng.generate::<f32>() * 2.0 - 1.0;
-
-        if u1 == 0.0 && u2 == 0.0 {
-            return Vec3A::ZERO;
-        }
-
-        let (r, theta) = if u1.abs() > u2.abs() {
-            (u1, std::f32::consts::FRAC_PI_4 * (u2 / u1))
-        } else {
-            (
-                u2,
-                std::f32::consts::FRAC_PI_2 - std::f32::consts::FRAC_PI_4 * (u1 / u2),
-            )
-        };
-
-        Vec3A::new(r * theta.cos(), r * theta.sin(), 0.0)
+    fn sample_disk(rng: &mut WyRand) -> Vec2 {
+        let r: f32 = rng.generate::<f32>().sqrt();
+        let t: f32 = rng.generate::<f32>() * std::f32::consts::TAU;
+        Vec2::new(r * t.cos(), r * t.sin())
     }
 
     pub fn render(
@@ -600,9 +601,10 @@ pub mod renderer {
         num_bounces: usize,
     ) -> Vec<Vec3A> {
         let (resolution_x, resolution_y) = resolution;
-        let inverse_resolution_x_2: f32 = 1. / resolution_x as f32 * 2.;
-        let inverse_resolution_y_2: f32 = 1. / resolution_y as f32 * 2.;
+        let inverse_resolution_x: f32 = 1. / resolution_x as f32;
+        let inverse_resolution_y: f32 = 1. / resolution_y as f32;
         let scale: f32 = (camera.fov * 0.5).tan();
+        let aspect_ratio: f32 = resolution_x as f32 / resolution_y as f32;
         let camera_rotation_x: Vec3A = camera.rotation * Vec3A::X;
         let camera_rotation_y: Vec3A = camera.rotation * Vec3A::Y;
         let camera_rotation_z: Vec3A = camera.rotation * Vec3A::Z;
@@ -622,36 +624,44 @@ pub mod renderer {
                 let mut bvh_intersector: BVHIntersector<'_> = BVHIntersector::new(bvh);
 
                 let normalized_screen_position_y: f32 =
-                    -((y as f32 + 0.5) * inverse_resolution_y_2 - 1.);
+                    1. - (y as f32 + 0.5) * inverse_resolution_y * 2.;
 
                 for x in 0..resolution_x {
                     let normalized_screen_position_x: f32 =
-                        (x as f32 + 0.5) * inverse_resolution_x_2 - 1.;
+                        (x as f32 + 0.5) * inverse_resolution_x * 2. - 1.;
+
+                    let focal_plane: Vec3A =
+                        camera_rotation_x * normalized_screen_position_x * aspect_ratio * scale
+                            + camera_rotation_y * normalized_screen_position_y * scale
+                            + camera_rotation_z * -1.;
+                    let focus_point: Vec3A = focal_plane * camera.focus_distance + camera.position;
 
                     let base_ray: Ray = Ray::new(
-                        camera.position,
-                        (camera_rotation_x
-                            * normalized_screen_position_x
-                            * camera.aspect_ratio
-                            * scale
-                            + camera_rotation_y * normalized_screen_position_y * scale
-                            + camera_rotation_z * -1.)
-                            .normalize(),
+                        camera.position + focal_plane * camera.clip_start,
+                        focal_plane.normalize(),
                     );
-
-                    let focus_point: Vec3A = base_ray.origin + base_ray.direction * camera.focus_distance;
 
                     let mut total_incoming_light: Vec3A = Vec3A::ZERO;
 
                     for _ in 0..num_samples {
-                        let mut ray: Ray = base_ray;
+                        let fov_jitter: Vec2 = sample_disk(&mut rng) * camera.blur;
+                        let anti_aliasing_jitter: Vec2 = sample_disk(&mut rng)
+                            * Vec2::new(inverse_resolution_x, inverse_resolution_y);
+                        let ray_origin: Vec3A = Vec3A::new(
+                            base_ray.origin.x + fov_jitter.x,
+                            base_ray.origin.y + fov_jitter.y,
+                            base_ray.origin.z,
+                        );
+                        let ray_direction: Vec3A = (focus_point - ray_origin).normalize();
 
-                        let jitter: Vec3A = sample_disk(&mut rng);
-                        let lens_offset: Vec3A = camera_rotation_x * jitter.x * camera.lens_radius
-                            + camera_rotation_y * jitter.y * camera.lens_radius;
-
-                        ray.origin = camera.position + lens_offset;
-                        ray.direction = (focus_point - ray.origin).normalize();
+                        let mut ray: Ray = Ray::new(
+                            Vec3A::new(
+                                ray_origin.x + anti_aliasing_jitter.x,
+                                ray_origin.y + anti_aliasing_jitter.y,
+                                ray_origin.z,
+                            ),
+                            ray_direction,
+                        );
 
                         let mut incoming_light: Vec3A = Vec3A::ZERO;
                         let mut ray_color: Vec3A = Vec3A::ONE;
@@ -660,7 +670,7 @@ pub mod renderer {
                             ray.update_internal_data();
 
                             if let Some((hit_distance, triangle_index)) =
-                                bvh_intersector.intersect(&ray, scene_triangles)
+                                bvh_intersector.intersect(&ray, scene_triangles, camera.clip_end)
                             {
                                 let triangle: &Triangle = &scene_triangles[triangle_index];
 
@@ -670,7 +680,7 @@ pub mod renderer {
                                         ray.direction =
                                             (triangle.normal + sample_sphere(&mut rng)).normalize();
 
-                                        ray_color *= 0.75;
+                                        ray_color *= 0.8;
                                     }
                                     Material::Emissive { albedo, strength } => {
                                         incoming_light += ray_color * albedo * strength;
@@ -726,7 +736,9 @@ pub mod color_management {
             const C: f32 = 2.43;
             const D: f32 = 0.59;
             const E: f32 = 0.14;
-            (color * (A * color + B)) / (color * (C * color + D) + E)
+            const F: f32 = 0.75;
+
+            (color * (A * color + B)) / (color * (C * color + D) + E) * F
         }
 
         pub fn apply(&self, color: &mut Vec3A) {
@@ -825,8 +837,9 @@ fn main() {
 
     let camera: camera::Camera = camera::Camera::new(
         1.,
-        16. / 9.,
-        1.,
+        0.1,
+        1000.,
+        0.8,
         0.04,
         Vec3A::new(0., 0., 1.),
         Mat3A::from_euler(EulerRot::XYZ, 0., 0., 0.),
@@ -843,7 +856,7 @@ fn main() {
             "res/dragon.obj",
             Vec3A::new(0., 0., 0.),
             Vec3A::ONE,
-            Mat3A::from_euler(EulerRot::XYZ, 0., 2., 0.),
+            Mat3A::from_euler(EulerRot::XYZ, 0., 2.1, 0.),
             0,
         )
         .expect("Failed to load obj file"),
@@ -873,7 +886,7 @@ fn main() {
         colorspace: color_management::Colorspace::Srgb,
     };
 
-    let mut buffer: Vec<Vec3A> = renderer::render(resolution, &camera, &scene, &bvh, 16, 6);
+    let mut buffer: Vec<Vec3A> = renderer::render(resolution, &camera, &scene, &bvh, 16, 8);
 
     color_manager.apply(&mut buffer);
 
