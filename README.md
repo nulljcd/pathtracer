@@ -8,6 +8,9 @@ A little cpu side pathtracer in rust.
 - Obj mesh loading
 - Simple materials
 - Depth of Field
+## TODO
+- Multiple importance sampling
+- More materials
 
 <img width="1920" height="1080" alt="render" src="https://github.com/user-attachments/assets/e660ab13-6c50-4207-a054-92157f9600b6" />
 
